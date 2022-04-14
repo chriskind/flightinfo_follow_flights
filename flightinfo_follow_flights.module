@@ -1,0 +1,371 @@
+<?php
+
+function flight_follow_nid($nid) {
+  $flight_follow_nid = &drupal_static(__FUNCTION__);
+  if(!isset($flight_follow_nid)) {
+    $flight_follow_nid = $nid;
+  }
+  return $flight_follow_nid;
+}
+
+function flight_follower_searchdate($searchdate = NULL) {
+  
+  if(empty($searchdate)) {
+    $searchdate = time();
+  }
+  
+  $flight_follow_searchdate = &drupal_static(__FUNCTION__);
+  if(!isset($flight_follow_searchdate)) {
+    $flight_follow_searchdate = $searchdate;
+  }
+  return $flight_follow_searchdate;
+}
+
+function flight_follow_block_view($delta = '') {
+
+}
+
+function flight_follow_ajax_flight_follow() {
+  ctools_include('content');
+  ctools_include('context');
+  $node = node_load(1);
+  $context = ctools_context_create('node', $node);
+  $context = array(
+      'context_node_1' => $context
+  );
+  return ctools_content_render('anonymous_follower_node_form', 'anonymous_follower_node_form', ctools_ajax_simple_form_pane(), array(), array(), $context);
+}
+
+function flight_follow_ajax_simple_form_pane() {
+  $configuration = array(
+      'anon_links' => 0, 
+      'context' => 'context_node_1', 
+      'override_title' => 0, 
+      'override_title_text' => ''
+  );
+  return $configuration;
+}
+
+function flight_follow_search_filter($view, $date = '2000-01-01', $key) {
+  /* Filter criterion: Content: Departure Time Local (field_flight_departure_local) */
+
+  $type = 'filter';
+  $table = 'field_data_field_flight_departure_local';
+  $field = 'field_flight_departure_local_value';
+  $options = array(
+      'value' => array(
+          'value' => $date
+      )
+  );
+  $id = $table . '_' . $key;
+  
+  $view->add_item($view->current_display, $type, $table, $field, $options, $id = NULL);
+  
+  return ($view);
+}
+
+function flightinfo_follow_flights_views_pre_view(&$view) {
+  
+  if($view->name == 'flights_erv' && $view->current_display == 'entityreference_3') {
+    
+    $q = drupal_get_query_parameters();
+    
+    $node_arg0 = arg(0);
+    $node_arg1 = arg(1);
+    $node_arg2 = arg(2);
+    
+    if(isset($q['afnid'])) {
+      $arg1 = $q['afnid'];
+    } elseif($node_arg0 == 'node' && $node_arg2 == 'edit') {
+      if($node = node_load($node_arg1)) {
+        if($node->type == 'follow_flights') {
+          $arg1 = $node->nid;
+        }
+      }
+    } else {
+      $arg1 = '0';
+    }
+    
+    if(isset($q['flight_id'])) {
+      $arg2 = $q['flight_id'];
+    } else {
+      $arg2 = '0';
+    }
+    
+    if(empty($view->args)) {
+      $view->args = array($arg1, $arg2);
+    }
+  }
+  
+  if($view->name == 'flights_erv' && $view->current_display == 'entityreference_1') {
+    $searchdate = flight_follower_searchdate();
+    $searchdate = strtotime($searchdate);
+    $searchdate = date('Y-m-d', $searchdate);
+    $key = 'flight_follow_form';
+    $view = flight_follow_search_filter($view, $searchdate, $key);
+  }
+}
+
+function flightinfo_follow_flights_views_query_alter(&$view, &$query) {
+  
+  if($view->name == 'flights_erv' | $view->current_display == 'entityreference_2') {
+  
+  }
+  
+  if($view->name == 'flights_erv' | $view->current_display == 'entityreference_3') {
+    foreach($view->query->where as $where => $name) {
+      if($name = 'conditions') {
+        
+        foreach($view->query->where[$where][$name] as $condition => $value) {
+          $field_name = $value['field'];
+          
+          if(isset($value['value'])) {
+            if(is_array($value['value'])) {
+              $field_value_key = key($value['value']);
+            } else {
+              $field_value_key = $value['value'];
+            }
+          }
+          
+          if(((strpos($field_name, 'field_anon_choose_flights_node') !== FALSE) | (strpos($field_name, 'node.nid') !== FALSE))) {
+            $view->query->where[$where]['type'] = 'OR';
+          } 
+
+        }
+      }
+    }
+  }
+  
+  if($view->name == 'flight_export_rev_4' && $view->current_display == 'block_4') {
+    $q = drupal_get_query_parameters();
+    
+    if(isset($q['flight_id'])) {
+      $flight_id = $q['flight_id'];
+
+      $nid_filter = array(
+          'conditions' => array(
+              'field' => 'node.nid', 
+              'value' => $q['flight_id'], 
+              'operator' => '='
+          ), 
+          'args' => array(), 
+          'type' => 'AND'
+      );
+      
+      $view->query->where[] = $nid_filter;
+    }
+  }
+  
+  if($view->name == 'flights_erv' | $view->current_display == 'entityreference_1') {
+
+  }
+}
+
+function flightinfo_follow_flights_views_pre_render(&$view) {
+
+}
+
+/*
+ * Implements hook_form_alter
+ */
+
+function flightinfo_follow_flights_form_alter(&$form, &$form_state, $form_id) {
+  
+  if($form_id == 'anonymous_follower_node_form' | 'follow_flight_form') {
+    
+    $flightInfoFollowFlights = new flightInfoFollowFlights($form, $form_state);
+    $flightInfoFollowFlights = $flightInfoFollowFlights->get_form();
+    
+    $form = $flightInfoFollowFlights['form'];
+    $form_state = $flightInfoFollowFlights['form_state'];
+    
+    adhd_buffer_to_dsm($form, 'dpm');
+    
+  }
+}
+
+function flightinfo_follow_flights_form_after_build($form, &$form_state) {
+
+  // MODULENAME_node_form_element_alter_register($form, 'field_FIELD_NAME');
+  if (!isset($form['field_anon_phone_number']['und'][0]['number']['#attributes'])) {
+     $form['field_anon_phone_number']['und'][0]['number']['#attributes'] = array();
+  }
+  
+  $form['field_anon_phone_number']['und'][0]['number']['#attributes']['placeholder'] = t('Phone');
+  adhd_buffer_to_dsm($form, 'dpm');
+  return $form;
+}
+
+
+
+/*
+ * implements hook_form_FORM_ID_alter
+ * used becuase hook_form_alter did not pickup form_placeholder module
+ */
+
+function flightinfo_follow_flights_form_anonymous_follower_node_form_alter(&$form, &$form_state, $form_id) {
+
+}
+
+function flight_follower_flights_form_validate($form, &$form_state) {
+
+}
+
+function flight_follower_searchdate_check($form, &$form_state) {
+  
+  $flight_id = $form_state['values']['flight_id']['und'][0]['value'];
+  
+  $searchdate = $form_state['values']['field_flight_search_date']['und'][0]['value'];
+  drupal_static_reset('flight_follower_searchdate_check');
+  flight_follower_searchdate($searchdate);
+}
+
+
+function flight_follower_duplicate_check_validator($form, &$form_state) {
+  
+  $args = arg();
+  
+  $q = array(
+      'query' => array()
+  );
+  
+  $check_values = array(
+      'flight_id', 
+      'client_id',
+      'update',
+  );
+  
+  foreach($check_values as $check_value) {
+    if(isset($form_state['values'][$check_value])) {
+      $q['query'][$check_value] = $form_state['values'][$check_value];
+    }
+  }
+  
+  if(isset($form_state) && !empty($form_state['values']['flight_id'])) {
+    $flight_information = flight_information($form_state['values']['flight_id']);
+    $flight_info_line = '"' . $flight_information['client_airline']['airline']  . " " . $flight_information['client_airline']['flight#'] . " "  . ' (' . $flight_information['from']['from_code'] . ") -to- " .  ' (' . $flight_information['to']['to_code'] . ') departing on ' . $flight_information['schedule']['depart_local_2'] . '"';
+  }
+  
+  $email = $form_state['values']['field_anon_address']['und'][0]['email'];
+  $phone = $form_state['input']['field_anon_phone_number']['und'][0];
+  $nid = flight_follower_duplicate_check($email, $phone);
+  adhd_buffer_to_dsm($nid, 'dpm');
+  
+  if(!empty($nid) && ($args[2] != 'edit') && !is_array($nid)) {
+    // already in system set email add in persistant variable...
+    flight_follow_nid($nid);
+    
+    
+    
+    $in_system_message = '
+      Your email or phone number is already in our system, You may change or update either now,
+      otherwise click next to add <b>' . $flight_info_line . '</b> to any other flights you are already following
+      ';
+    
+    drupal_set_message($in_system_message, 'warning');
+
+    if(isset($q['query']['flight_id']) && !empty($q['query']['flight_id'])) {
+      $q['query']['afnid'] = $nid;
+    }
+    $path = "/node/$nid/edit";
+    
+	// return to $nid;
+    drupal_goto($path, $q);
+    
+    
+  } elseif(!empty($nid) && is_array($nid)) {
+    $in_system_message = '
+      You have seperate records for the email and phone number combination you entered, our system
+      only permits one record for an email or phone number. Please choose which record you would like
+      to update and add <b>' . $flight_info_line . '</b>. The only way to merge records is to delete one of the records and manually re-add the flights
+      you would like to follow to the other
+      ';
+    
+    drupal_set_message($in_system_message, 'warning');
+
+    if(isset($q['query']['flight_id']) && !empty($q['query']['flight_id'])) {
+      $q['query']['afnid'] = $nid;
+    }
+    
+    $records = implode('+', $nid);
+    adhd_buffer_to_dsm($records, 'dpm');
+    
+    $path = "/myflights/$records/search";
+    
+	// return to $nid;
+    drupal_goto($path, $q);
+  }
+}
+
+function flight_follower_duplicate_check($email = NULL, $phone = NULL, $return_type = NULL) {
+  
+  // Search for email already in system
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'anonymous_follower')
+    ->fieldCondition('field_anon_address', 'email', $email, '=');
+  
+  $result_email_search = $query->execute();
+  
+  
+  // Search for phone already in system
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'anonymous_follower')
+    ->fieldCondition('field_anon_phone_number', 'country_codes', $phone['country_codes'], '=')
+    ->fieldCondition('field_anon_phone_number', 'number', $phone['number'], '=');
+  
+  $result_phone_search = $query->execute();
+  
+  
+  
+  if(!empty($result_email_search) && !empty($result_email_search['node'])) {
+    $follower_ids = array_keys($result_email_search['node']);
+
+    if(count($follower_ids) > 1) {
+      $ids = implode(' | ', $follower_ids);
+      $severity = WATCHDOG_NOTICE;
+      $title = 'search_follower_emails';
+      $message = __FUNCTION__ . ': Search should return empty or an array w/one entity id';
+      watchdog($title, $message, $ids, $severity);
+    }
+    
+    $email_follower_id = $follower_ids[0];
+    
+  }
+  
+  if(!empty($result_phone_search) && !empty($result_phone_search['node'])) {
+    
+    $follower_ids = array_keys($result_phone_search['node']);
+
+    if(count($follower_ids) > 1) {
+      $ids = implode(' | ', $follower_ids);
+      $severity = WATCHDOG_NOTICE;
+      $title = 'search_follower_phonenums';
+      $message = __FUNCTION__ . ': Search should return empty or an array w/one entity id';
+      watchdog($title, $message, $ids, $severity);
+    }
+    
+    $phone_follower_id = $follower_ids[0];  
+  } 
+  
+  if(empty($phone_follower_id) && empty($email_follower_id)) {
+    return FALSE;
+  } elseif(!empty($email_follower_id) && empty($phone_follower_id)) {
+    return $email_follower_id;
+  } elseif(empty($email_follower_id) && !empty($phone_follower_id)) {
+    return $phone_follower_id;
+  } elseif($email_follower_id == $phone_follower_id) {
+    return $email_follower_id;
+  } else {
+    return array($email_follower_id, $phone_follower_id);
+  }
+  
+  if($return_type == 'bool') {
+    return TRUE;
+  }
+  
+  return ($follower_id);
+}
+
+?>
